@@ -11,6 +11,7 @@
 diy-part1.sh    拉取可选插件到 package/custom（passwall/openclash/mosdns/lucky/tailscale 等，默认全关）
 diy-part2.sh    默认值定制：① 时区改中国（Asia/Shanghai, CST-8）
                 ② 5G WiFi：国家码 CN / 信道 auto / 频宽 160MHz
+                ③ 固件版本后追加「作者 + 构建时间」
 configs/        每机型一份精简 diffconfig（约 440 行，需 make defconfig 展开）
 files/          自定义 rootfs 文件，会自动拷进源码（sbin/tempinfo + 两个 uci-defaults））
 packages/npu-clanker-template/   可选插件包的 Makefile 模板（占位符 @PKG_NAME@ 等）
@@ -67,6 +68,46 @@ scripts/        NPU 固件脚本：
 | 中文翻译 | ❌ po/ 只有 es + templates | ✅ 自带 `po/zh_Hans`，48 条全翻 |
 | 仓库结构 | ⚠ 根目录 + 同名子目录各一份，feed 索引会中断 | ✅ 单层，正常 |
 | luci.mk 路径 | 需 feeds 在固定位置 | ✅ 已修 |
+
+## 固件版本后追加「作者 + 构建时间」
+
+LuCI 概览页「固件版本」现在长这样：
+
+```
+PonWrt SNAPSHOT · qwe3017 · 2026-09-30 17:09
+```
+
+### 原理（别改错文件）
+
+LuCI 读的是 `/etc/openwrt_release` 里的 `DISTRIB_DESCRIPTION`。这个文件由
+`base-files` 提供，编译时装完 ipk 后用 `VERSION_SED_SCRIPT` 把模板里的占位符替换：
+
+| 占位符 | 含义 | ponwrt 默认 |
+|---|---|---|
+| `%D` | `VERSION_DIST` | `PonWrt` |
+| `%V` | `VERSION_NUMBER` | `SNAPSHOT` |
+| `%C` | `VERSION_CODE` | 空 |
+
+所以改的是**模板** `package/base-files/files/etc/openwrt_release`
+（`diy-part2.sh` 第 5 段），编译时自动替换 —— 不需要首启脚本，也不会被 ipk 覆盖。
+
+> 不要写 `files/etc/openwrt_release`：那会把版本号写死，`%D %V` 就没了。
+> `os-release` 里的 `%B` 只有 `SOURCE_DATE_EPOCH` 时间戳，不可读，所以构建
+> 时间由脚本自己格式化。
+
+### 怎么改
+
+| 方式 | 做法 |
+|---|---|
+| 换作者名 | workflow 输入项 `fw_author`（默认 `qwe3017`） |
+| 固定构建时间 | 环境变量 `FW_BUILD_TIME`（留空 = 自动取构建时刻，Asia/Shanghai） |
+| 完全自定义后缀 | 环境变量 `FW_DESC_SUFFIX`（填了就忽略上面两个，例如 `\| built by A/B #1`） |
+| 改 `diy-part2.sh` 顶部常量 | 同上三个常量，编译期生效 |
+
+`FW_DESC_SUFFIX` 里带 `/` `|` `#` `&` 也没问题 —— 脚本用 perl + 环境变量传
+替换文本，不走 sed 分隔符。
+
+若 `.config` 里设了 `CONFIG_VERSION_CODE`，模板会自动保留 `%C`，不会出现连续空格。
 
 ## 5G WiFi 默认值（国家码 CN / 信道 auto / 160MHz）
 
